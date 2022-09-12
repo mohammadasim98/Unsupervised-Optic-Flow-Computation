@@ -1,4 +1,7 @@
 # Multi-Scale based Optic Flow Computation with Deep Energy
+
+[![Watch the video](https://i.imgur.com/vKb2F1B.png)](https://youtu.be/dsnJEqtevwU)
+
 ### A CNN based computation of Optic Flow by unsupervised means using Multi-Scale Deep Energy Reduction
 
 ## Abstract
