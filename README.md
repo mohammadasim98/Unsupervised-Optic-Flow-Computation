@@ -80,6 +80,7 @@ For each scale, we compute the energies using the specified data and smoothness 
 To make the differentiator block efficient, we stacked the $(u, v)$ component of the optic flow, and the frames $I_0$ and $I_1$ depth-wise into tensors for each scale. Then we apply depth-wise convolution with x- and y-directional 3x3 Sobel operators. The output of x- and y-directional Sobel operation is then concatenated depth-wise i.e. let $T$ be the input to the differentiator block, then the output will be ${T_x, T_y}$ for each scale.
 
 To design a relatively small architecture, we started with a bigger version of the modified FlowNetSimple model with more layers and channels. Then by performing several experiments, we shrunk the number of trainable weights from ~7M to ~170K. More specific details regarding the model are described in table 1.
+
 | Activation | Batch Norm | Pooling | Residuals | U-Net-like | Parameters \# | layers (including concat & diff blocks) |
 |------------|------------|---------|-----------|------------|---------------|-----------------------------------------|
 | Leaky ReLU | No         | Average | Yes       | Yes        | 171,846       | 92                                      |
@@ -99,12 +100,18 @@ $$EPE =\frac{1}{MN}\sum_{i}^N\sum_{j}^M \sqrt{(u_{pred} - u_{gt})^2 + (v_{pred} 
 
 ### Training Configuration
 
+To make the training efficient, we concatenated the two subsequent frames depth-wise in a single tensor. Then we group it with the ground truth and then batched it. This is useful to compute the EPE during the training and keep track of the performance efficiently in real-time. For each batch of inputs, we receive a batch of individual energy (multi-scale energies summed up). These energies are used to compute the gradients that are aggregated over the whole batch.
+
+To update the model using the computed gradients, we used an Adam optimizer with an adaptable learning rate scheme. We set the initial learning rate $\alpha_{0}$ to 0.001 and then decrease it whenever the average energy of a batch starts to flatten with a decay factor of 0.8 and patience of 12 epochs. Patience describes the number of epochs to wait before decaying the learning rate. Also to make the results comparable, we set the same values for the parameters in both experiments. This is summarized in table 2.
+
 | Experiment Nr. | $\alpha_{0}$ | Decay | Patience (epochs) | $\beta_{1}$ | $\beta_{2}$ |
 |----------------|----------------------------------|-------|-------------------|---------------------------------|---------------------------------|
 | 1              | 0.001                            | 0.01  | 12                | 0.9                             | 0.999                           |
 | 2              | 0.001                            | 0.01  | 12                | 0.9                             | 0.999                           |
 
 **Table 2**: *Adaptable learning rate decay configuration*
+
+During training, we set the batch size to 128 for both the validation and training pipeline. The data are ordered scene-by-scene without any shuffling. In table 3, we summarize all the important configuration including the regularization parameter $\alpha$, the diffusivity parameter $\lambda$, the multi-scale weights (starting from the highest scale to lowest), and the number of epochs.  
 
 | Experiment Nr. | $\alpha$ | $\lambda$ | $\epsilon$ | Multi-scale weights     | Epochs | Batch size | Diffusivity        |
 |----------------|------------------------------|---------------------------------|--------------------------------|-------------------------|--------|------------|--------------------|
@@ -113,17 +120,8 @@ $$EPE =\frac{1}{MN}\sum_{i}^N\sum_{j}^M \sqrt{(u_{pred} - u_{gt})^2 + (v_{pred} 
 
 **Table 3**: *General Training Configuration*
 
-To make the training efficient, we concatenated the two subsequent frames depth-wise in a single tensor. Then we group it with the ground truth and then batched it. This is useful to compute the EPE during the training and keep track of the performance efficiently in real-time. For each batch of inputs, we receive a batch of individual energy (multi-scale energies summed up). These energies are used to compute the gradients that are aggregated over the whole batch.
-
-To update the model using the computed gradients, we used an Adam optimizer with an adaptable learning rate scheme. We set the initial learning rate $\alpha_{0}$ to 0.001 and then decrease it whenever the average energy of a batch starts to flatten with a decay factor of 0.8 and patience of 12 epochs. Patience describes the number of epochs to wait before decaying the learning rate. Also to make the results comparable, we set the same values for the parameters in both experiments. This is summarized in table 2.
-
-
-During training, we set the batch size to 128 for both the validation and training pipeline. The data are ordered scene-by-scene without any shuffling. In table 3, we summarize all the important configuration including the regularization parameter $\alpha$, the diffusivity parameter $\lambda$, the multi-scale weights (starting from the highest scale to lowest), and the number of epochs.  
-
 ### Results
 In table 4, we perform the comparison of the EPE obtained on the whole dataset with methods and models proposed by other people. Considering the simplicity of our approach, the results are quite reasonable as the model is able to provide a good optic flow estimate, especially with linear isotropic smoothing. 
-
-This can be analyzed further from figure 7, where the visual results obtained at the largest scale for both experiments are displayed along with the ground truth. The differences between homogeneous and isotropic smoothing are very notable whereas, in isotropic smoothing, the edges are well preserved with the use of an adaptive diffusivity function. This diffusion process is still isotropic which means that it still does not have a preferred direction as opposed to anisotropic. The color scheme for representing the optic flow used in this work is shown in figure 2.
 
 | Methods      | Models                      | EPE           |
 |--------------|-----------------------------|---------------|
@@ -135,31 +133,35 @@ This can be analyzed further from figure 7, where the visual results obtained at
 
 **Table 4**: *EPE Comparison*
 
-<p align="center"><img src="imgs/color-Wheel.png"></p>
-
-**Figure 2**: *Color scheme for representing optic flow*
-
-Figure 3 represents the variational energy plotted for the first 1000 out of 4000 epochs for better visibility. With linear isotropic smoothing, the convergence is much faster and is able to minimize the energy more than the homogeneous smoothing. A similar characteristic can also be observed for the end-point error shown in figure 4. Both figure 3 and 4 shows the data for the training performance. For validation, in figure 5, we can see the final end-point errors for both experiments are almost equal (mainly due to the smaller validation data set size), however, the convergence is faster with the linear isotropic smoothing. Finally, in figure 6, we can see the characteristics graph for our adaptive learning rate schedule. We observed that using such a schedule allows for faster convergence under 4000 epochs as compared to 30k~100k epochs because we can start with a relatively larger learning rate and then decrease whenever required.
-
-<p align="center"><img src="imgs/Picture1.png" width="350"></p>
-
-**Figure 3**: *Variational energy (Training) over 1000 epochs*
-
-<p align="center"><img src="imgs/Picture2.png" width="350"></p>
-
-**Figure 4**: *End-point-error EPE (Training) over 1000 epochs*
-
-<p align="center"><img src="imgs/Picture3.png" width="350"></p>
-
-**Figure 5**: *End-point-error EPE (Validation) over 1000 epochs*
-
-<p align="center"><img src="imgs/Picture4.png" width="350"></p>
-
-**Figure 6**: *Learning rate schedule over 1000 epochs*
+This can be analyzed further from figure 2, where the visual results obtained at the largest scale for both experiments are displayed along with the ground truth. The differences between homogeneous and isotropic smoothing are very notable whereas, in isotropic smoothing, the edges are well preserved with the use of an adaptive diffusivity function. This diffusion process is still isotropic which means that it still does not have a preferred direction as opposed to anisotropic. The color scheme for representing the optic flow used in this work is shown in figure 3.
 
 <p align="center"><img src="imgs/results-of.png" width="750"></p>
 
-**Figure 7**: *Samples from the dataset with (a) subsequent frames superposed, (b) ground truth, (c) results by using homogeneous diffusion as the smoothness assumption, (d) results by using image-driven isotropic regularization as the smoothness assumption*
+**Figure 2**: *Samples from the dataset with (a) subsequent frames superposed, (b) ground truth, (c) results by using homogeneous diffusion as the smoothness assumption, (d) results by using image-driven isotropic regularization as the smoothness assumption*
+
+<p align="center"><img src="imgs/color-Wheel.png"></p>
+
+**Figure 3**: *Color scheme for representing optic flow*
+
+Figure 4 represents the variational energy plotted for the first 1000 out of 4000 epochs for better visibility. With linear isotropic smoothing, the convergence is much faster and is able to minimize the energy more than the homogeneous smoothing. A similar characteristic can also be observed for the end-point error shown in figure 5. Both figure 4 and 5 shows the data for the training performance. For validation, in figure 6, we can see the final end-point errors for both experiments are almost equal (mainly due to the smaller validation data set size), however, the convergence is faster with the linear isotropic smoothing. Finally, in figure 7, we can see the characteristics graph for our adaptive learning rate schedule. We observed that using such a schedule allows for faster convergence under 4000 epochs as compared to 30k~100k epochs because we can start with a relatively larger learning rate and then decrease whenever required.
+
+<p align="center"><img src="imgs/Picture1.png" width="350"></p>
+
+**Figure 4**: *Variational energy (Training) over 1000 epochs*
+
+<p align="center"><img src="imgs/Picture2.png" width="350"></p>
+
+**Figure 5**: *End-point-error EPE (Training) over 1000 epochs*
+
+<p align="center"><img src="imgs/Picture3.png" width="350"></p>
+
+**Figure 6**: *End-point-error EPE (Validation) over 1000 epochs*
+
+<p align="center"><img src="imgs/Picture4.png" width="350"></p>
+
+**Figure 7**: *Learning rate schedule over 1000 epochs*
+
+
 
 ## Conclusion
 In conclusion, our primary goal was to use deep learning and variational energy for computing optic flow that can be useful for real-time applications. We were able to achieve reasonable results with a relatively smaller model and simpler approach. To find the best mathematical model for training the neural network, we performed two sets of extensive experimentation mainly focusing on the smoothness assumption. It turns out that the smoothness assumption has a huge impact on the quality of the optic flow estimation. Better modeling for the smoothness terms i.e., isotropic and anisotropic diffusion modeling outperforms the conventional homogeneous diffusion model. For future work, we believe that using anisotropic models might further improve the optic flow estimation compared with isotropic models including both linear and non-linear approaches. Also, more advanced layers similar to the one proposed by multiple authors will improve the performance of the unsupervised model while reducing its size for better applicability. 
