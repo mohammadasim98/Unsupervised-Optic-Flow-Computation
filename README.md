@@ -36,6 +36,7 @@ Inspired by these ideas, our work makes the use of variational energy with a non
 
 ## Methodology
 In this section, we discuss the implementation of our project. We will first discuss the mathematical modeling for the variational energy followed by the model architecture and approaches we used. Then we will also discuss how the data set was prepared and processed.
+
 ### Mathematical Modelling
 For modeling the data-term, we used the sum of squared differences (SSD) between the warped and the original frame through the computed optic flow. It is based on the assumption that the brightness of the two subsequent pixels stays the same. We used the albedo version of the MPI-Sintel dataset that satisfies this assumption. The SSD passes through a non-quadratic penaliser proposed by [3] which is as follows.
 
@@ -55,23 +56,84 @@ $$\psi_S(s^2) = \frac{1}{1+ s^2/\lambda^2}$$
 
 This diffusivity is inversely proportional to the gradient magnitude of the frame $I_0$ which means that at larger gradients, the diffusivity is smaller hence edges are preserved. For comparing the effect of using both isotropic and homogeneous modeling for the smoothness term, we set up two experiments on the two smoothness models discussed in section 4.
 
-
-![alt text](../imgs/flownet.jpg)
+### Deep Learning Model
 Our deep learning model is inspired by FlowNetSimple architecture proposed by \cite{fischer} and the ResNet50 architecture proposed by \cite{he}. Our hybrid model is a shrunk version of the FlowNetSimple and the only extra feature is the residuals added in the encoder part of the network. We reduced the number of convolutional layers and the number of filters for each convolution such that our highest number of channels is 64, whereas, in the FlowNetSimple, the highest number of channels is 1024. We then added multi-scale losses with the help of our down-sampler and the differentiation block. The final loss is computed by summing the multi-scale losses weighted by a monotonically decreasing weighting factor with increasing resolution. This way, we can emphasize more towards the smaller scale which acts as a recipe for computing optic flow at a larger scale in a pyramidal fashion. The complete abstract view of the architecture is shown in figure 1.
+
+![Abstract Architecture](imgs/flownet.jpg)
+**Figure 1**: *Abstract view of the complete architecture*
 
 For each scale, we compute the energies using the specified data and smoothness terms. The energies are summed for each pixel in an image. The down-sampling block performs average pooling with a kernel size of 2. The input frames and the optic flows at each scale must match their dimensions. So in the reduced FlowNetSimple architecture, we added padding to each convolution/de-convolution layer while performing down-sampling through average pooling to keep the dimension consistent and easier to manage. 
 
-To make the differentiator block efficient, we stacked the \begin{math}(u, v)\end{math} component of the optic flow, and the frames \begin{math}I_0\end{math} and \begin{math}I_1\end{math} depth-wise into tensors for each scale. Then we apply depth-wise convolution with x- and y-directional 3x3 Sobel operators. The output of x- and y-directional Sobel operation is then concatenated depth-wise i.e. let \begin{math}T\end{math} be the input to the differentiator block, then the output will be \begin{math}\{T_x, T_y\}\end{math} for each scale.
+To make the differentiator block efficient, we stacked the $(u, v)$ component of the optic flow, and the frames $I_0$ and $I_1$ depth-wise into tensors for each scale. Then we apply depth-wise convolution with x- and y-directional 3x3 Sobel operators. The output of x- and y-directional Sobel operation is then concatenated depth-wise i.e. let $T$ be the input to the differentiator block, then the output will be ${T_x, T_y}$ for each scale.
 
 To design a relatively small architecture, we started with a bigger version of the modified FlowNetSimple model with more layers and channels. Then by performing several experiments, we shrunk the number of trainable weights from ~7M to ~170K. More specific details regarding the model are described in table 1.
-\begin{table*}[htb]
-\caption{Reduced FlowNetSimple Configuration}
-\label{table:demo}
-\begin{tabular}{p{2cm}p{2cm}p{2cm}p{2cm}p{2cm}p{2cm}p{2cm}}
-\hline
-Activation & Batch Norm & Pooling & Residuals & U-Net-like & Parameters \# & layers (including concat \& diff blocks)\\
-\hline
-Leaky ReLU & No & Average & Yes & Yes & 171,846 & 92\\
-\hline
-\end{tabular}
-\end{table*}
+| Activation | Batch Norm | Pooling | Residuals | U-Net-like | Parameters \# | layers (including concat & diff blocks) |
+|------------|------------|---------|-----------|------------|---------------|-----------------------------------------|
+| Leaky ReLU | No         | Average | Yes       | Yes        | 171,846       | 92                                      |
+**Table 1**: *Reduced FlowNetSimple Configuration*
+
+### Preparing Dataset
+The dataset was taken from the albedo version of the MPI-Sintel dataset that satisfies the brightness constancy assumption. This was a better choice considering the scale, complexity, and scope of the project. The dataset consists of 1064 frames with an average of 50 frames per scene. To make the training pipeline efficient, we used gray-scale images and stored the subsequent frames in a serialized *tfrecord* format. This also includes storing the ground truths in a 3-dimensional tensor format for evaluating the performance (Note: Ground truths are not used to train the model). Before serializing to *tfrecord*, the images and ground truth are all resized and cropped to (128x256). We used multiple *tfrecord* files to store the frames and ground truth to make it easy for splitting the data into training and validation sets. 
+
+## Experimentation and Results
+We split the dataset with a ratio of 80\%:20\% for training and validation respectively. There was also a test set provided by the dataset but to a lack of available ground truth, it was not possible to evaluate the performance. There are several parameters that we had to tune after several rounds of experimentation.
+
+### Evaluation Metrics
+To make the evaluation comparable to other published articles and the supervised approaches, we used the average end-point-error (EPE) which is the average euclidean distance between the predicted optic flow and the ground truth. For each $(u_{pred}, v_{pred})$ and #(u_{gt}, v_{gt})$, we compute the euclidean distance for each point and then average it across the whole image. The equation to compute the EPE is shown in the following. 
+
+$$EPE =\frac{1}{MN}\sum_{i}^N\sum_{j}^M \sqrt{(u_{pred} - u_{gt})^2 + (v_{pred} - v_{gt})^2}$$
+
+### Training Configuration
+
+| Experiment Nr. | $\alpha_{0}$ | Decay | Patience (epochs) | $\beta_{1}$ | $\beta_{2}$ |
+|----------------|----------------------------------|-------|-------------------|---------------------------------|---------------------------------|
+| 1              | 0.001                            | 0.01  | 12                | 0.9                             | 0.999                           |
+| 2              | 0.001                            | 0.01  | 12                | 0.9                             | 0.999                           |
+**Table 2**: *Adaptable learning rate decay configuration*
+
+| Experiment Nr. | $\alpha$ | $\lambda$ | $\epsilon$ | Multi-scale weights     | Epochs | Batch size | Diffusivity        |
+|----------------|------------------------------|---------------------------------|--------------------------------|-------------------------|--------|------------|--------------------|
+| 1              | 0.01                         | None                            | 0.001                          | [0.2, 0.4, 0.6, 0.8, 1] | 4000   | 128        | None (Homogeneous) |
+| 2              | 0.01                         | 0.005                           | 0.001                          | [0.2, 0.4, 0.6, 0.8, 1] | 4000   | 128        | Perona-Malik       |
+**Table 3**: *General Training Configuration*
+
+To make the training efficient, we concatenated the two subsequent frames depth-wise in a single tensor. Then we group it with the ground truth and then batched it. This is useful to compute the EPE during the training and keep track of the performance efficiently in real-time. For each batch of inputs, we receive a batch of individual energy (multi-scale energies summed up). These energies are used to compute the gradients that are aggregated over the whole batch.
+
+To update the model using the computed gradients, we used an Adam optimizer with an adaptable learning rate scheme. We set the initial learning rate $\alpha_{0}$ to 0.001 and then decrease it whenever the average energy of a batch starts to flatten with a decay factor of 0.8 and patience of 12 epochs. Patience describes the number of epochs to wait before decaying the learning rate. Also to make the results comparable, we set the same values for the parameters in both experiments. This is summarized in table 2.
+
+
+During training, we set the batch size to 128 for both the validation and training pipeline. The data are ordered scene-by-scene without any shuffling. In table 3, we summarize all the important configuration including the regularization parameter $\alpha$, the diffusivity parameter $\lambda$, the multi-scale weights (starting from the highest scale to lowest), and the number of epochs.  
+
+### Results
+In table 4, we perform the comparison of the EPE obtained on the whole dataset with methods and models proposed by other people. Considering the simplicity of our approach, the results are quite reasonable as the model is able to provide a good optic flow estimate, especially with linear isotropic smoothing. 
+
+This can be analyzed further from figure 7, where the visual results obtained at the largest scale for both experiments are displayed along with the ground truth. The differences between homogeneous and isotropic smoothing are very notable whereas, in isotropic smoothing, the edges are well preserved with the use of an adaptive diffusivity function. This diffusion process is still isotropic which means that it still does not have a preferred direction as opposed to anisotropic. The color scheme for representing the optic flow used in this work is shown in figure 2.
+
+| Methods      | Models                      | EPE           |
+|--------------|-----------------------------|---------------|
+| Unsupervised | FlowNet\cite{Yu}            | 11.19         |
+| Unsupervised | Ours (Homogeneous)          | extbf{11.16}  |
+| Unsupervised | Ours (Linear ID Isotropic)  | \textbf{10.7} |
+| Supervised   | FlowNetSimple\cite{fischer} | 8.43          |
+| Unsupervised | DeepFlow\cite{Weinzaepfel}  | 7.21          |
+**Table 4**: *EPE Comparison*
+
+![Abstract Architecture](imgs/color-Wheel.png)
+**Figure 2**: *Color scheme for representing optic flow*
+
+Figure 3 represents the variational energy plotted for the first 1000 out of 4000 epochs for better visibility. With linear isotropic smoothing, the convergence is much faster and is able to minimize the energy more than the homogeneous smoothing. A similar characteristic can also be observed for the end-point error shown in figure 4. Both figure 3 and 4 shows the data for the training performance. For validation, in figure 5, we can see the final end-point errors for both experiments are almost equal (mainly due to the smaller validation data set size), however, the convergence is faster with the linear isotropic smoothing. Finally, in figure 6, we can see the characteristics graph for our adaptive learning rate schedule. We observed that using such a schedule allows for faster convergence under 4000 epochs as compared to 30k$\sim$100k epochs because we can start with a relatively larger learning rate and then decrease whenever required.
+
+<img src="imgs/Picture1.png" width="350">
+**Figure 3**: *Variational energy (Training) over 1000 epochs*
+
+<img src="imgs/Picture2.png" width="350">
+**Figure 4**: *End-point-error EPE (Training) over 1000 epochs*
+
+<img src="imgs/Picture3.png" width="350">
+**Figure 5**: *End-point-error EPE (Validation) over 1000 epochs*
+
+<img src="imgs/Picture4.png" width="350">
+**Figure 6**: *Learning rate schedule over 1000 epochs*
+
+![Abstract Architecture](imgs/results-of.png)
+**Figure 7**: *Samples from the dataset with (a) subsequent frames superposed, (b) ground truth, (c) results by using homogeneous diffusion as the smoothness assumption, (d) results by using image-driven isotropic regularization as the smoothness assumption*
