@@ -1,11 +1,11 @@
-# Multi-Scale based Optic Flow Computation with Deep Energy
-
-[![Watch the video](https://i.imgur.com/vKb2F1B.png)](https://youtu.be/dsnJEqtevwU)
-
+# Multi-Scale based Optic Flow Computation with Deep Energy 
 ### A CNN based computation of Optic Flow by unsupervised means using Multi-Scale Deep Energy Reduction
 
+Check for sample video results on YouTube: https://youtu.be/dsnJEqtevwU
+
+
 ## Abstract
-Advancement in Deep Learning has opened a portal for a variety of applications. Such an application includes image analysis and synthesis that range from image-to-image tasks such as denoising, in-painting, and segmentation to classification with other tasks. In our work, we used the idea of using Deep Energy to train a model for computing optic flow field, given a pair of subsequent frames. This task is relevant in self-driving technology, stereo reconstruction, and image registration. Our work uses variational calculus to design an energy loss function to train a deep learning model without using ground truths. It is similar to the Physics-Informed Neural Networks, where the goal is to use the PDEs to minimize the residual loss and allow the model to train from the given loss by updating its corresponding weights. The dataset consists of synthetic video frames provided by MPI-Sintel generated using Blender software. 
+Advancement in Deep Learning has opened a portal for a variety of applications. Such an application includes image analysis and synthesis that range from image-to-image tasks such as denoising, in-painting, and segmentation to classification with other tasks. In our work, we used the idea of using Deep Energy to train a model for computing optic flow field, given a pair of subsequent frames. This task is relevant in self-driving technology, stereo reconstruction, and image registration. Our work uses variational calculus to design an computed-optic-flow-IIDR-slowed.mp4energy loss function to train a deep learning model without using ground truths. It is similar to the Physics-Informed Neural Networks, where the goal is to use the PDEs to minimize the residual loss and allow the model to train from the given loss by updating its corresponding weights. The dataset consists of synthetic video frames provided by MPI-Sintel generated using Blender software. 
 
 ## Introduction
 For decades researchers came up with different numerical schemes and algorithms which can compute optic flow given a pair of subsequent frames. These were slower because the algorithm computes the optic flow for each pair of frames in several iterations. They come in the category of local and global techniques with advantages and disadvantages. [7] proposed the first local method where they assumed that the brightness of pixels is equal for both frames given the illumination is constant. With this assumption, we can draw an optic flow constraint that is solved to compute the components of the flow field by using a window. Having a window,  the linear system of equations is overdetermined because we assume the flow fields are equal in the window. Then it is solved via the least square methods.
