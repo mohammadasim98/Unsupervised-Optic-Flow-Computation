@@ -2,6 +2,15 @@
 ### A CNN based computation of Optic Flow by unsupervised means using Multi-Scale Deep Energy Reduction
 
 Check for sample video results on YouTube: https://youtu.be/dsnJEqtevwU
+Consists of 4 sections horizontally concatenated frames i.e.,
+
+1: Computed optic flow
+
+2: Ground truth
+
+3: Original frame
+
+4: Computed optic flow superposed on the original frame
 
 
 ## Abstract
