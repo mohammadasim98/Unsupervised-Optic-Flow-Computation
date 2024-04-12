@@ -1,5 +1,5 @@
 # Multi-Scale based Optic Flow Computation with Deep Energy 
-### A CNN based computation of Optic Flow by unsupervised means using Multi-Scale Deep Energy Reduction
+### A CNN based computation of Energy-based Optical Flow Optimization via Multi-Scale Objective Formulation 
 
 Check for sample video results on YouTube: https://youtu.be/dsnJEqtevwU
 Consists of 4 sections horizontally concatenated frames i.e.,
